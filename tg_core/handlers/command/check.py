@@ -6,8 +6,17 @@ from database import User, Payment
 
 
 async def check(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    lang = User.get_language_by_update(update)
+    user_id = update.effective_user.id
+    lang = User.get_language(user_id)
     
-    Payment.check_pending_payments()
-    # TODO: make it better
-    await update.message.reply_text( __[lang]['order']['canceling'],)
+    user = User.get_user(user_id)
+    payment = Payment.check_user_payments(user_id)
+    pending_order = Payment.user_has_pending_payment(user_id)
+    
+    if payment and pending_order:
+        new_membership = str(user.membership_expiry)
+        await update.message.reply_text(__[lang]['order']['accept'].format(date=new_membership))
+    elif not pending_order:
+        await update.message.reply_text(__[lang]['order']['unable'])
+    else:
+        await update.message.reply_text(__[lang]['order']['no_order'])

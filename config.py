@@ -37,6 +37,18 @@ translations = {
         },
         'order': {
             'canceling': "All your pending orders have been successfully canceled.",
+            'accept': "Your payment has been accepted, and your membership has been extended until {date}.\nThank you for your trust and support!",
+            'unable': """We were unable to process your payment at this time. Please ensure:
+
+    - Your wallet has sufficient funds.
+    - The correct amount was sent to the deposit address.
+    - The transaction was completed successfully.
+
+If you believe this is an error, please contact our support team for assistance.
+
+Thank you for your patience!
+            """,
+            'no_order': "you have no payment."
         }
     },
 }

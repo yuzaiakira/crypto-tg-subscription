@@ -138,7 +138,29 @@ class User(BaseModel):
             update={cls.lang: lang}             # Update the language field
         ).execute()
     
+    @classmethod
+    def has_membership(cls, telegram_id:int) -> bool:
+        """
+        Check if a user with the given Telegram ID has an active membership.
 
+        A user is considered to have an active membership if their `membership_expiry`
+        field is set and the expiry date is in the future.
+
+        Args:
+            telegram_id (int): The Telegram ID of the user to check.
+
+        Returns:
+            bool: True if the user has an active membership, False otherwise.
+        """
+        try:
+            user = cls.get_user(telegram_id=telegram_id)
+            
+            if user.membership_expiry and user.membership_expiry > datetime.now():
+                return True
+            return False
+        
+        except DoesNotExist:
+            return False
 
 
 class Payment(BaseModel):
@@ -222,50 +244,183 @@ class Payment(BaseModel):
             return False
     
     @classmethod
+    def check_user_payments(cls, telegram_id: int) -> bool:
+        """
+        Process pending payments for a specific user and update membership accordingly.
+
+        Args:
+            telegram_id (int): Telegram ID of the user to process payments for
+
+        Returns:
+            bool: True if at least one payment was successfully processed, False otherwise
+        """
+        user = User.get_user(telegram_id)
+        
+        any_payment_successful = False
+        now = datetime.datetime.now()
+        
+        processed_count = 0
+        expired_count = 0
+        errors = 0
+        
+        try:
+            pending_payments = cls.select().where(
+                (cls.user == user) &
+                (cls.status == 'pending') &
+                (cls.expiry > now)
+            ).order_by(cls.expiry.asc())  # Process oldest first
+            
+            # Handle expired payments
+            expired_count = cls.update(status='expired').where(
+                (cls.user == user) &
+                (cls.status == 'pending') &
+                (cls.expiry <= now)
+            ).execute()
+            
+            if expired_count:
+                logger.info(f"Marked {expired_count} expired payments for user {telegram_id}")
+
+            if not pending_payments:
+                logger.info(f"No pending payments to process for: {telegram_id}")
+                return any_payment_successful
+            
+            for payment in pending_payments:
+                logger.info(f"Processing payment {payment.id} for user {telegram_id}")
+                try:
+                    with cls._meta.database.atomic():
+                        result = cls._process_single_payment(payment, now)
+                        processed_count += 1 if result else 0
+                except Exception as e:
+                    errors += 1
+                    logger.error(f"Failed processing payment {payment.id}: {str(e)}")
+                    continue
+            
+        except DatabaseError as e:
+            logger.critical(f"Database error during payment processing: {str(e)}")
+        
+        logger.info(
+            f"Payment processing complete. for: {telegram_id}"
+            f"Success: {processed_count}, "
+            f"Expired: {expired_count}, "
+            f"Errors: {errors}"
+        )
+        return any_payment_successful
+        
+    @classmethod
     def check_pending_payments(cls) -> None:
-        pending_payments = cls.select().where(
-            (cls.status == 'pending') &
-            (cls.expiry > datetime.datetime.now())
+        """s
+        Process all pending payments and update membership statuses.
+        
+        Includes error handling, transaction management, and detailed logging.
+        """
+        now = datetime.datetime.now()
+        processed_count = 0
+        expired_count = 0
+        errors = 0
+
+        try:
+            # Get pending payments in chronological order
+            pending_payments = cls.select().where(
+                (cls.status == 'pending') &
+                (cls.expiry > now)
+            ).order_by(cls.expiry.asc())
+            
+            expired_count = cls.mark_expired_payments(now)
+            
+            if not pending_payments:
+                logger.info("No pending payments to process")
+                return
+
+            logger.info(f"Processing {len(pending_payments)} pending payments")
+
+            for payment in pending_payments:
+                try:
+                    with cls._meta.database.atomic():
+                        result = cls._process_single_payment(payment, now)
+                        processed_count += 1 if result else 0
+                except Exception as e:
+                    errors += 1
+                    logger.error(f"Failed processing payment {payment.id}: {str(e)}")
+                    continue
+
+            # Process expired payments in bulk update
+            
+            
+        except DatabaseError as e:
+            logger.critical(f"Database error during payment processing: {str(e)}")
+            return
+
+        logger.info(
+            f"Payment processing complete. "
+            f"Success: {processed_count}, "
+            f"Expired: {expired_count}, "
+            f"Errors: {errors}"
         )
 
-        for payment in pending_payments:
-            logger(f"\nChecking payment for user {payment.user.telegram_id}")
-            if not payment.user.wallet_address:
-                logger("No wallet address registered!")
-                continue
-                
+    @classmethod
+    def _process_single_payment(cls, payment, now: datetime.datetime) -> bool:
+        """Process a single payment and return success status"""
+        logger.info(
+            f"Processing payment {payment.id} for user {payment.user.telegram_id}"
+        )
+
+        if not payment.user.wallet_address:
+            logger.warning(
+                f"Skipping payment {payment.id} - no wallet address for user "
+                f"{payment.user.telegram_id}"
+            )
+            return False
+
+        try:
             payment_made = check_tron_transaction(
                 payment.user.wallet_address,
                 payment.deposit_address,
                 payment.amount
             )
+        except Exception as e:
+            logger.error(
+                f"Transaction check failed for payment {payment.id}: {str(e)}"
+            )
+            return False
 
-            if payment_made:
-                payment.status = 'completed'
-                payment.save()
-                
-                user = payment.user
-                if user.membership_expiry and user.membership_expiry > datetime.datetime.now():
-                    new_expiry = user.membership_expiry + datetime.timedelta(days=payment.duration_days)
-                else:
-                    new_expiry = datetime.datetime.now() + datetime.timedelta(days=payment.duration_days)
-                
-                user.membership_expiry = new_expiry
-                user.save()
-                logger("Payment verified! Membership extended.")
-            else:
-                logger("Payment not received")
+        if not payment_made:
+            logger.info(f"Payment {payment.id} not yet received")
+            return False
 
-        # Mark expired payments
-        expired = cls.update(status='expired').where(
+        # Update payment status
+        payment.status = 'completed'
+        payment.save()
+
+        # Calculate membership extension
+        user = payment.user
+        current_expiry = user.membership_expiry or now
+        if current_expiry < now:
+            current_expiry = now
+
+        new_expiry = current_expiry + datetime.timedelta(
+            days=payment.duration_days
+        )
+        user.membership_expiry = new_expiry
+        user.save()
+
+        logger.info(
+            f"Payment {payment.id} completed. "
+            f"New membership expiry: {new_expiry.isoformat()}"
+        )
+        return True
+
+    @classmethod
+    def mark_expired_payments(cls, now: datetime.datetime) -> int:
+        """Mark expired payments and return count of affected rows"""
+        expired_count = cls.update(status='expired').where(
             (cls.status == 'pending') &
-            (cls.expiry <= datetime.datetime.now())
+            (cls.expiry <= now)
         ).execute()
-        if expired:
-            logger(f"\nMarked {expired} expired payments")
-
-
-
+        
+        if expired_count > 0:
+            logger.info(f"Marked {expired_count} payments as expired")
+            
+        return expired_count
 
 
 with db:
