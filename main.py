@@ -18,8 +18,7 @@ def main():
     app.add_handler(CommandHandler("check", check))
     app.add_handler(CommandHandler("membership", membership))
     
-    
-    
+    # /wallet command conversation
     app.add_handler(wallet_Handler)
     
     app.add_handler(CallbackQueryHandler(callback_routing))

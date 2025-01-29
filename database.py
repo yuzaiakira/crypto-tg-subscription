@@ -295,6 +295,8 @@ class Payment(BaseModel):
                 with cls._meta.database.atomic():
                     result = cls._process_single_payment(payment, now)
                     processed_count += 1 if result else 0
+                    any_payment_successful = True
+                    
             except Exception as e:
                 errors += 1
                 logger.error(f"Failed processing payment {payment.id}: {str(e)}")
@@ -452,7 +454,6 @@ class Payment(BaseModel):
         logger.info(f"Marked {expired_count} payments as expired")
         
         return expired_count
-
 
 
 with db:
