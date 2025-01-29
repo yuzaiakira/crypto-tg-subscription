@@ -1,7 +1,7 @@
 import os
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler
 
-from tg_core.handlers.command import start, plan, order, check
+from tg_core.handlers.command import start, plan, order, check, membership
 from tg_core.handlers.conversation import wallet_Handler
 from tg_core.handlers.callback import callback_routing
 from logger import logger
@@ -16,6 +16,7 @@ def main():
     app.add_handler(CommandHandler("plan", plan))
     app.add_handler(CommandHandler("order", order))
     app.add_handler(CommandHandler("check", check))
+    app.add_handler(CommandHandler("membership", membership))
     
     
     

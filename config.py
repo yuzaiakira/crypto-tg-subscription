@@ -35,6 +35,10 @@ translations = {
             'cancel': "The operation has been canceled."
             
         },
+        'membership':{
+            'is_membership': "You hold a membership that expires on {date}.",
+            'no_membership': "your membership is done"
+            },
         'order': {
             'canceling': "All your pending orders have been successfully canceled.",
             'accept': "Your payment has been accepted, and your membership has been extended until {date}.\nThank you for your trust and support!",

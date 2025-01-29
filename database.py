@@ -146,29 +146,29 @@ class User(BaseModel):
         
         logger.info(f"{telegram_id} change languge to {lang}")
     
-    @classmethod
-    def has_membership(cls, telegram_id:int) -> bool:
+    @property
+    def has_membership(self) -> bool:
         """
         Check if a user with the given Telegram ID has an active membership.
 
         A user is considered to have an active membership if their `membership_expiry`
         field is set and the expiry date is in the future.
 
-        Args:
-            telegram_id (int): The Telegram ID of the user to check.
-
         Returns:
             bool: True if the user has an active membership, False otherwise.
         """
-        try:
-            user = cls.get_user(telegram_id=telegram_id)
-            
-            if user.membership_expiry and user.membership_expiry > datetime.now():
-                return True
-            return False
+    
+
+        if self.get_membership_expiry > datetime.datetime.now(datetime.timezone.utc):
+            return True
+    
+        return False
         
-        except DoesNotExist:
-            return False
+    @property
+    def get_membership_expiry(self):
+        date_time = datetime.datetime.fromisoformat(self.membership_expiry)
+        return date_time
+    
 
 
 class Payment(BaseModel):
@@ -406,7 +406,7 @@ class Payment(BaseModel):
 
         # Calculate membership extension
         user = payment.user
-        current_expiry = user.membership_expiry or now
+        current_expiry = user.get_membership_expiry or now
         if current_expiry < now:
             current_expiry = now
 
