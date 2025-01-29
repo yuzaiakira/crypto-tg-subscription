@@ -1,13 +1,20 @@
+from logger import logger
 import base58
 import os
 import requests
+import datetime
 from dotenv import load_dotenv
 
 load_dotenv()
 
-TEST_MODE = os.getenv("TEST_MODE", "True").lower() == "true"
-TRON_NETWORK = 'https://api.nileex.io' if TEST_MODE else 'https://api.trongrid.io'
-USDT_CONTRACT = os.getenv("TEST_USDT_CONTRACT") if TEST_MODE else os.getenv("USDT_CONTRACT")
+TEST_MODE: bool = os.getenv("TEST_MODE", "True").lower() == "true"
+TRONGRID_API_KEY: str = os.getenv("TRONGRID_API_KEY")
+
+# jst token for testnet 
+TOKEN_DECIMALS: int = 18 if TEST_MODE else 6
+
+TRON_NETWORK: str = 'https://nile.trongrid.io/' if TEST_MODE else 'https://api.trongrid.io'
+USDT_CONTRACT: str = os.getenv("TEST_USDT_CONTRACT") if TEST_MODE else os.getenv("USDT_CONTRACT")
 
 
 
@@ -54,16 +61,42 @@ def generate_deposit_address()->str:
     return os.getenv("WALLET")
 
 
-def check_tron_transaction(sender_address, recipient_address, amount):
+def check_tron_transaction(sender_address:str, recipient_address:str, amount:float) -> str|bool:
+    logger.info(f"checking {amount} from {sender_address} to {recipient_address}")
     
-    response = requests.post(f'{TRON_NETWORK}/wallet/triggerconstantcontract',
-        json={
-            'contract_address': USDT_CONTRACT,
-            'function_selector': 'balanceOf(address)',
-            'parameter': recipient_address,
-            'owner_address': sender_address
-        }
-    )
+    required_amount = int(amount * 10**TOKEN_DECIMALS)  
     
-    return response.json().get('constant_result', [0])[0] >= amount * 10**6
+    one_hour_ago = int((datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)).timestamp() * 1000)
+
+    headers = {"TRON-PRO-API-KEY": TRONGRID_API_KEY}
+    url = f"{TRON_NETWORK}/v1/accounts/{recipient_address}/transactions/trc20"
+    
+    params = {
+        "contract_address": USDT_CONTRACT,
+        "from": sender_address,
+        "to": recipient_address,
+        "min_timestamp": one_hour_ago,
+        "only_confirmed": "true",
+        "order_by": "block_timestamp,desc",
+        "limit": 200
+    }
+
+    try:
+        response = requests.get(url, headers=headers, params=params)
+        response.raise_for_status()
+        logger.info(str(response.json()))
+        transactions = response.json().get("data", [])
+        logger.info(f"Found {len(transactions)} transactions to check")
+        for tx in transactions:
+            tx_amount = int(tx.get("value", 0))
+            tx_time = tx.get("block_timestamp", 0)
+            
+            if tx_amount == required_amount and tx_time >= one_hour_ago:
+                logger.info(f"Valid transaction found: {tx['transaction_id']}")
+                return tx['transaction_id']
+
+        return False
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Transaction check failed: {str(e)}")
+        return False
 

@@ -179,7 +179,7 @@ class Payment(BaseModel):
     created_at = DateTimeField(default=datetime.datetime.now)
     expiry = DateTimeField()
     status = CharField(default='pending')  # pending/completed/expired/canceled
-    tx_hash = CharField(null=True)
+    tx_id = CharField(null=True)
     
     @classmethod
     def create_user_payment(cls, telegram_id: int, amount:float, duration_days:int) -> 'Payment':
@@ -401,6 +401,7 @@ class Payment(BaseModel):
 
         # Update payment status
         payment.status = 'completed'
+        payment.tx_id = payment_made
         payment.save()
 
         # Calculate membership extension
