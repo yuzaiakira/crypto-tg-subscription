@@ -293,7 +293,7 @@ class Payment(BaseModel):
             logger.info(f"Processing payment {payment.id} for user {telegram_id}")
             try:
                 with cls._meta.database.atomic():
-                    result = cls._process_single_payment(payment, now)
+                    result = cls.process_single_payment(payment, now)
                     processed_count += 1 if result else 0
                     any_payment_successful = True
                     
@@ -342,7 +342,7 @@ class Payment(BaseModel):
             for payment in pending_payments:
                 try:
                     with cls._meta.database.atomic():
-                        result = cls._process_single_payment(payment, now)
+                        result = cls.process_single_payment(payment, now)
                         processed_count += 1 if result else 0
                 except Exception as e:
                     errors += 1
@@ -361,7 +361,7 @@ class Payment(BaseModel):
         )
 
     @classmethod
-    def _process_single_payment(cls, payment: 'Payment', now: datetime.datetime) -> bool:
+    def process_single_payment(cls, payment: 'Payment', now: datetime.datetime) -> bool:
         """
         Process a single payment and return success status
         
