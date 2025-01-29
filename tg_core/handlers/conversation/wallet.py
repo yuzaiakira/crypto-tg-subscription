@@ -1,6 +1,6 @@
 from telegram import Update
 from telegram.ext import CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
-from tg_core.logger import logger
+from logger import logger
 from .State_manager import GET_WALLET_ADDRESS
 
 from config import translations as __

@@ -2,7 +2,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from tg_core.inlineKeyboard import language_selection_keyboard
-from tg_core.logger import logger
+from logger import logger
 from config import translations as __
 from database import User
 

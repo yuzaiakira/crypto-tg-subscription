@@ -1,12 +1,10 @@
 import os
-import logging
-
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler
 
 from tg_core.handlers.command import start, plan, order, check
 from tg_core.handlers.conversation import wallet_Handler
 from tg_core.handlers.callback import callback_routing
-from tg_core.logger import logger
+from logger import logger
 
 TG_TOKEN = os.getenv("TG_TOKEN")
 

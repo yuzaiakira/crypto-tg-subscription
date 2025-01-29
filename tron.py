@@ -7,7 +7,7 @@ load_dotenv()
 
 TEST_MODE = os.getenv("TEST_MODE", "True").lower() == "true"
 TRON_NETWORK = 'https://api.nileex.io' if TEST_MODE else 'https://api.trongrid.io'
-USDT_CONTRACT = 'TF17BgPaZYbz8oxbjhriubPDsA7ArKoLX3' if TEST_MODE else 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
+USDT_CONTRACT = os.getenv("TEST_USDT_CONTRACT") if TEST_MODE else os.getenv("USDT_CONTRACT")
 
 
 
@@ -51,7 +51,7 @@ def generate_deposit_address()->str:
         str: Wallet address
     """
     
-    return 'T9zJYnaS9gPbQts2xEgnkJbd3nwu7nJyci'
+    return os.getenv("WALLET")
 
 
 def check_tron_transaction(sender_address, recipient_address, amount):

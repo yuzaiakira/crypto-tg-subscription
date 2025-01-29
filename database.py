@@ -2,7 +2,7 @@ from peewee import *
 from telegram import Update
 
 import datetime
-from tg_core.logger import logger
+from logger import logger
 from tron import generate_deposit_address, check_tron_transaction
 
 
@@ -31,6 +31,10 @@ class User(BaseModel):
             User: The retrieved or newly created user.
         """
         user, created = cls.get_or_create(telegram_id=telegram_id)
+        
+        if created:
+            logger.info(f"create new usser: {telegram_id}")
+            
         return user
     
     @classmethod
@@ -86,6 +90,8 @@ class User(BaseModel):
             conflict_target=[cls.telegram_id],  # Correct conflict target
             update={cls.wallet_address: wallet_address}             # Update the language field
         ).execute()
+        
+        logger.info(f"{telegram_id} update wallet address to {wallet_address}")
           
     @classmethod
     def get_language(cls, telegram_id: int) -> str:
@@ -137,6 +143,8 @@ class User(BaseModel):
             conflict_target=[cls.telegram_id],  # Correct conflict target
             update={cls.lang: lang}             # Update the language field
         ).execute()
+        
+        logger.info(f"{telegram_id} change languge to {lang}")
     
     @classmethod
     def has_membership(cls, telegram_id:int) -> bool:
@@ -190,6 +198,8 @@ class Payment(BaseModel):
         expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)
         deposit_address = generate_deposit_address()
         
+        logger.info(f"create payment order for {telegram_id}")
+        
         return cls.create(
         user=user,
         deposit_address=deposit_address,
@@ -237,10 +247,10 @@ class Payment(BaseModel):
             )
             updated_count = query.execute()
 
-            # Return True if any orders were canceled
+            logger.info(f'{telegram_id} cancel all order')
+
             return updated_count > 0
         except DoesNotExist:
-            # User does not exist
             return False
     
     @classmethod
@@ -257,7 +267,7 @@ class Payment(BaseModel):
         user = User.get_user(telegram_id)
         
         any_payment_successful = False
-        now = datetime.datetime.now()
+        now = datetime.datetime.now(datetime.timezone.utc)
         
         processed_count = 0
         expired_count = 0
@@ -270,12 +280,7 @@ class Payment(BaseModel):
                 (cls.expiry > now)
             ).order_by(cls.expiry.asc())  # Process oldest first
             
-            # Handle expired payments
-            expired_count = cls.update(status='expired').where(
-                (cls.user == user) &
-                (cls.status == 'pending') &
-                (cls.expiry <= now)
-            ).execute()
+            expired_count = cls.mark_expired_payments(now, telegram_id)
             
             if expired_count:
                 logger.info(f"Marked {expired_count} expired payments for user {telegram_id}")
@@ -313,7 +318,7 @@ class Payment(BaseModel):
         
         Includes error handling, transaction management, and detailed logging.
         """
-        now = datetime.datetime.now()
+        now = datetime.datetime.now(datetime.timezone.utc)
         processed_count = 0
         expired_count = 0
         errors = 0
@@ -342,9 +347,6 @@ class Payment(BaseModel):
                     errors += 1
                     logger.error(f"Failed processing payment {payment.id}: {str(e)}")
                     continue
-
-            # Process expired payments in bulk update
-            
             
         except DatabaseError as e:
             logger.critical(f"Database error during payment processing: {str(e)}")
@@ -358,8 +360,18 @@ class Payment(BaseModel):
         )
 
     @classmethod
-    def _process_single_payment(cls, payment, now: datetime.datetime) -> bool:
-        """Process a single payment and return success status"""
+    def _process_single_payment(cls, payment: 'Payment', now: datetime.datetime) -> bool:
+        """
+        Process a single payment and return success status
+        
+        Parameters:
+            payment (Payment): The payment object to be processed.
+            now (datetime.datetime): The current date and time used for membership expiry calculations.
+
+        Returns:
+            bool: True if the payment was successfully processed, 
+                  False otherwise.
+        """
         logger.info(
             f"Processing payment {payment.id} for user {payment.user.telegram_id}"
         )
@@ -410,12 +422,25 @@ class Payment(BaseModel):
         return True
 
     @classmethod
-    def mark_expired_payments(cls, now: datetime.datetime) -> int:
-        """Mark expired payments and return count of affected rows"""
-        expired_count = cls.update(status='expired').where(
-            (cls.status == 'pending') &
-            (cls.expiry <= now)
-        ).execute()
+    def mark_expired_payments(cls, now: datetime.datetime, telegram_id: int) -> int:
+        """
+        Mark expired payments and return count of affected rows
+        
+        Parameters:
+            now (datetime.datetime): The current date and time used to etermine if payments are expired.
+            
+            telegram_id (int, optional): The Telegram ID of the user whose payments should be marked. 
+                                         If None, all expired payments will be marked.
+
+        Returns:
+            int: The count of payments that were marked as expired.
+        
+        """
+        where = (cls.status == 'pending') & (cls.expiry <= now)
+        if telegram_id:
+            where &= (cls.user.telegram_id == telegram_id)
+            
+        expired_count = cls.update(status='expired').where(where).execute()
         
         if expired_count > 0:
             logger.info(f"Marked {expired_count} payments as expired")
