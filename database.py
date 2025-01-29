@@ -264,7 +264,7 @@ class Payment(BaseModel):
         Returns:
             bool: True if at least one payment was successfully processed, False otherwise
         """
-        user = User.get_user(telegram_id)
+
         
         any_payment_successful = False
         now = datetime.datetime.now(datetime.timezone.utc)
@@ -273,35 +273,34 @@ class Payment(BaseModel):
         expired_count = 0
         errors = 0
         
-        try:
-            pending_payments = cls.select().where(
-                (cls.user == user) &
-                (cls.status == 'pending') &
-                (cls.expiry > now)
-            ).order_by(cls.expiry.asc())  # Process oldest first
-            
-            expired_count = cls.mark_expired_payments(now, telegram_id)
-            
-            if expired_count:
-                logger.info(f"Marked {expired_count} expired payments for user {telegram_id}")
 
-            if not pending_payments:
-                logger.info(f"No pending payments to process for: {telegram_id}")
-                return any_payment_successful
-            
-            for payment in pending_payments:
-                logger.info(f"Processing payment {payment.id} for user {telegram_id}")
-                try:
-                    with cls._meta.database.atomic():
-                        result = cls._process_single_payment(payment, now)
-                        processed_count += 1 if result else 0
-                except Exception as e:
-                    errors += 1
-                    logger.error(f"Failed processing payment {payment.id}: {str(e)}")
-                    continue
-            
-        except DatabaseError as e:
-            logger.critical(f"Database error during payment processing: {str(e)}")
+        pending_payments = cls.select().join(User).where(
+            (User.telegram_id == telegram_id) &
+            (cls.status == 'pending') &
+            (cls.expiry > now)
+        ).order_by(cls.expiry.asc())
+                
+        expired_count = cls.mark_expired_payments(now, telegram_id)
+        
+        if expired_count:
+            logger.info(f"Marked {expired_count} expired payments for user {telegram_id}")
+
+        if not pending_payments:
+            logger.info(f"No pending payments to process for: {telegram_id}")
+            return any_payment_successful
+        
+        for payment in pending_payments:
+            logger.info(f"Processing payment {payment.id} for user {telegram_id}")
+            try:
+                with cls._meta.database.atomic():
+                    result = cls._process_single_payment(payment, now)
+                    processed_count += 1 if result else 0
+            except Exception as e:
+                errors += 1
+                logger.error(f"Failed processing payment {payment.id}: {str(e)}")
+                continue
+        
+
         
         logger.info(
             f"Payment processing complete. for: {telegram_id}"
@@ -389,6 +388,7 @@ class Payment(BaseModel):
                 payment.deposit_address,
                 payment.amount
             )
+            
         except Exception as e:
             logger.error(
                 f"Transaction check failed for payment {payment.id}: {str(e)}"
@@ -436,16 +436,22 @@ class Payment(BaseModel):
             int: The count of payments that were marked as expired.
         
         """
-        where = (cls.status == 'pending') & (cls.expiry <= now)
+        # Start with the base query
+        query = cls.update(status='expired').where(cls.status == 'pending', cls.expiry <= now)
+
+        # If a telegram_id is provided, filter using a subquery
         if telegram_id:
-            where &= (cls.user.telegram_id == telegram_id)
-            
-        expired_count = cls.update(status='expired').where(where).execute()
+            # Create a subquery to filter by telegram_id
+            user_subquery = User.select().where(User.telegram_id == telegram_id)
+            query = query.where(cls.user.in_(user_subquery))
+
+        # Execute the update and get the count of affected rows
+        expired_count = query.execute()
         
-        if expired_count > 0:
-            logger.info(f"Marked {expired_count} payments as expired")
-            
+        logger.info(f"Marked {expired_count} payments as expired")
+        
         return expired_count
+
 
 
 with db:

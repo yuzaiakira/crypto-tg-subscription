@@ -8,3 +8,4 @@ logging.basicConfig(
     filemode='a',
 )
 logger = logging.getLogger("yuzaiakira_tg_subscription")
+logging.getLogger('httpx').setLevel(logging.WARNING)

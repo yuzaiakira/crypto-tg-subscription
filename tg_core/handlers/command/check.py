@@ -13,7 +13,7 @@ async def check(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     payment = Payment.check_user_payments(user_id)
     pending_order = Payment.user_has_pending_payment(user_id)
     
-    if payment and pending_order:
+    if payment:
         new_membership = str(user.membership_expiry)
         await update.message.reply_text(__[lang]['order']['accept'].format(date=new_membership))
     elif not pending_order:
