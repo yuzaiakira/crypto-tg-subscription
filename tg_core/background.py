@@ -10,21 +10,21 @@ async def background_processing(app):
     processed_count = 0
     expired_count = 0
     errors = 0
-
+    
     try:
+        expired_count = Payment.mark_expired_payments(now, None)
+        
         # Get pending payments in chronological order
         pending_payments = Payment.select().where(
             (Payment.status == 'pending') &
             (Payment.expiry > now)
         ).order_by(Payment.expiry.asc())
         
-        expired_count = Payment.mark_expired_payments(now, None)
-        
         if not pending_payments:
             logger.info("No pending payments to process")
             return
 
-        logger.info(f"Processing {len(pending_payments)} pending payments")
+        logger.info(f"Processing {len(pending_payments)} pending payments on bg")
 
         for payment in pending_payments:
             try:

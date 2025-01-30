@@ -12,10 +12,6 @@ from logger import logger
 
 TG_TOKEN = os.getenv("TG_TOKEN")
 
-async def background_job(app):
-    await background_processing(app)
-
-
 def main():
     app = ApplicationBuilder().token(TG_TOKEN).build()
     logger.info("Bot started")
@@ -34,12 +30,11 @@ def main():
     # Configure scheduler
     scheduler = BackgroundScheduler()
     scheduler.add_job(
-        lambda: asyncio.run(background_job(app)),  # Use asyncio.run to create an event loop
+        lambda: asyncio.run(background_processing(app)),
         'interval',
-        seconds=5,
+        minutes=10,
         jitter=30
         )
-    
     scheduler.start()
 
     app.run_polling()

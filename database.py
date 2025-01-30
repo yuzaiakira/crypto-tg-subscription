@@ -158,16 +158,17 @@ class User(BaseModel):
             bool: True if the user has an active membership, False otherwise.
         """
     
-
-        if self.get_membership_expiry > datetime.datetime.now(datetime.timezone.utc):
+        if self.get_membership_expiry and self.get_membership_expiry > datetime.datetime.now(datetime.timezone.utc):
             return True
     
         return False
         
     @property
     def get_membership_expiry(self):
-        date_time = datetime.datetime.fromisoformat(self.membership_expiry)
-        return date_time
+        if self.membership_expiry:
+            date_time = datetime.datetime.fromisoformat(self.membership_expiry)
+            return date_time
+        
     
 
 
@@ -265,52 +266,39 @@ class Payment(BaseModel):
             bool: True if at least one payment was successfully processed, False otherwise
         """
 
-        
-        any_payment_successful = False
         now = datetime.datetime.now(datetime.timezone.utc)
         
-        processed_count = 0
-        expired_count = 0
-        errors = 0
-        
+        expired_count = cls.mark_expired_payments(now, telegram_id)
 
-        pending_payments = cls.select().join(User).where(
+        latest_payment = cls.select().join(User).where(
             (User.telegram_id == telegram_id) &
             (cls.status == 'pending') &
             (cls.expiry > now)
-        ).order_by(cls.expiry.asc())
+        ).order_by(cls.expiry.desc()).limit(1)
                 
-        expired_count = cls.mark_expired_payments(now, telegram_id)
-        
         if expired_count:
             logger.info(f"Marked {expired_count} expired payments for user {telegram_id}")
 
-        if not pending_payments:
+        if not latest_payment:
             logger.info(f"No pending payments to process for: {telegram_id}")
-            return any_payment_successful
+            return False
         
-        for payment in pending_payments:
-            logger.info(f"Processing payment {payment.id} for user {telegram_id}")
-            try:
-                with cls._meta.database.atomic():
-                    result = cls.process_single_payment(payment, now)
-                    processed_count += 1 if result else 0
-                    any_payment_successful = True
-                    
-            except Exception as e:
-                errors += 1
-                logger.error(f"Failed processing payment {payment.id}: {str(e)}")
-                continue
+        latest_payment = latest_payment[0]
+        logger.info(f"Processing payment {latest_payment.id} for user {telegram_id}")
         
-
+        try:
+            with cls._meta.database.atomic():
+                result = cls.process_single_payment(latest_payment, now)
+                if result:
+                    return True     
+                
+        except Exception as e:
+            errors += 1
+            logger.error(f"Failed processing payment {latest_payment.id}: {str(e)}")
+            return False
         
-        logger.info(
-            f"Payment processing complete. for: {telegram_id}"
-            f"Success: {processed_count}, "
-            f"Expired: {expired_count}, "
-            f"Errors: {errors}"
-        )
-        return any_payment_successful
+        return False
+        
         
     @classmethod
     def check_pending_payments(cls) -> None:
@@ -325,13 +313,13 @@ class Payment(BaseModel):
         errors = 0
 
         try:
+            expired_count = cls.mark_expired_payments(now)
+            
             # Get pending payments in chronological order
             pending_payments = cls.select().where(
                 (cls.status == 'pending') &
                 (cls.expiry > now)
             ).order_by(cls.expiry.asc())
-            
-            expired_count = cls.mark_expired_payments(now)
             
             if not pending_payments:
                 logger.info("No pending payments to process")
@@ -374,7 +362,7 @@ class Payment(BaseModel):
                   False otherwise.
         """
         logger.info(
-            f"Processing payment {payment.id} for user {payment.user.telegram_id}"
+            f"process_single_payment: Processing payment {payment.id} for user {payment.user.telegram_id}"
         )
 
         if not payment.user.wallet_address:
@@ -385,14 +373,17 @@ class Payment(BaseModel):
             return False
 
         try:
+            logger.info(f'payment.created_at {str(payment.created_at)}')
             payment_made = check_tron_transaction(
                 payment.user.wallet_address,
                 payment.deposit_address,
-                payment.amount
+                payment.amount,
+                payment.created_at
+               
             )
-            
+                        
         except Exception as e:
-            logger.error(
+            logger.info(
                 f"Transaction check failed for payment {payment.id}: {str(e)}"
             )
             return False

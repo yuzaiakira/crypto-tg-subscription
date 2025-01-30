@@ -61,12 +61,12 @@ def generate_deposit_address()->str:
     return os.getenv("WALLET")
 
 
-def check_tron_transaction(sender_address:str, recipient_address:str, amount:float) -> str|bool:
+def check_tron_transaction(sender_address:str, recipient_address:str, amount:float, timestamp: datetime.timedelta) -> str|bool:
     logger.info(f"checking {amount} from {sender_address} to {recipient_address}")
     
     required_amount = int(amount * 10**TOKEN_DECIMALS)  
-    
-    one_hour_ago = int((datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)).timestamp() * 1000)
+    min_timestamp = timestamp.timestamp() * 1000
+    logger.info(f'min_timestamp {min_timestamp}')
 
     headers = {"TRON-PRO-API-KEY": TRONGRID_API_KEY}
     url = f"{TRON_NETWORK}/v1/accounts/{recipient_address}/transactions/trc20"
@@ -75,10 +75,10 @@ def check_tron_transaction(sender_address:str, recipient_address:str, amount:flo
         "contract_address": USDT_CONTRACT,
         "from": sender_address,
         "to": recipient_address,
-        "min_timestamp": one_hour_ago,
+        "min_timestamp": min_timestamp,
         "only_confirmed": "true",
         "order_by": "block_timestamp,desc",
-        "limit": 200
+        "limit": 1
     }
 
     try:
@@ -91,7 +91,7 @@ def check_tron_transaction(sender_address:str, recipient_address:str, amount:flo
             tx_amount = int(tx.get("value", 0))
             tx_time = tx.get("block_timestamp", 0)
             
-            if tx_amount == required_amount and tx_time >= one_hour_ago:
+            if tx_amount == required_amount and tx_time >= min_timestamp:
                 logger.info(f"Valid transaction found: {tx['transaction_id']}")
                 return tx['transaction_id']
 
