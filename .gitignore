@@ -161,4 +161,4 @@ cython_debug/
 
 dev/
 database.db
-
+log.txt

@@ -62,6 +62,31 @@ def generate_deposit_address()->str:
 
 
 def check_tron_transaction(sender_address:str, recipient_address:str, amount:float, timestamp: datetime.timedelta) -> str|bool:
+    """
+    Checks for a TRON transaction from a specified sender to a recipient with a given amount and timestamp.
+
+    This function queries the TRON network to verify if a transaction of a specified amount 
+    (in TRC20 tokens) has occurred from the sender's address to the recipient's address 
+    after a specified timestamp. It returns the transaction ID if a valid transaction is found, 
+    or False if no valid transaction exists or if an error occurs during the request.
+
+    Parameters:
+    - sender_address (str): The address of the sender in the TRON network.
+    - recipient_address (str): The address of the recipient in the TRON network.
+    - amount (float): The amount of TRC20 tokens to check for in the transaction.
+    - timestamp (datetime.timedelta): The minimum timestamp (as a timedelta) after which the transaction should have occurred.
+
+    Returns:
+    - str | bool: The transaction ID of the valid transaction if found, otherwise False.
+
+    Raises:
+    - requests.exceptions.RequestException: If there is an issue with the network request to the TRON API.
+
+    Logs:
+    - Logs the process of checking the transaction, including the amount, sender, recipient, 
+      and any errors encountered during the request.
+    """
+    
     logger.info(f"checking {amount} from {sender_address} to {recipient_address}")
     
     required_amount = int(amount * 10**TOKEN_DECIMALS)  

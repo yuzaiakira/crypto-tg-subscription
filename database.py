@@ -164,7 +164,19 @@ class User(BaseModel):
         return False
         
     @property
-    def get_membership_expiry(self):
+    def get_membership_expiry(self) -> datetime.datetime:
+        """
+        Retrieves the membership expiry date and time.
+
+        This property checks if the membership expiry date is set. If it is, 
+        it converts the expiry date from ISO format to a datetime object 
+        and returns it. If the membership expiry is not set, it returns None.
+
+        Returns:
+            datetime.datetime | None: The membership expiry date and time as a 
+            datetime object if it exists, otherwise None.
+        """
+        
         if self.membership_expiry:
             date_time = datetime.datetime.fromisoformat(self.membership_expiry)
             return date_time
@@ -299,55 +311,6 @@ class Payment(BaseModel):
         
         return False
         
-        
-    @classmethod
-    def check_pending_payments(cls) -> None:
-        """s
-        Process all pending payments and update membership statuses.
-        
-        Includes error handling, transaction management, and detailed logging.
-        """
-        now = datetime.datetime.now(datetime.timezone.utc)
-        processed_count = 0
-        expired_count = 0
-        errors = 0
-
-        try:
-            expired_count = cls.mark_expired_payments(now)
-            
-            # Get pending payments in chronological order
-            pending_payments = cls.select().where(
-                (cls.status == 'pending') &
-                (cls.expiry > now)
-            ).order_by(cls.expiry.asc())
-            
-            if not pending_payments:
-                logger.info("No pending payments to process")
-                return
-
-            logger.info(f"Processing {len(pending_payments)} pending payments")
-
-            for payment in pending_payments:
-                try:
-                    with cls._meta.database.atomic():
-                        result = cls.process_single_payment(payment, now)
-                        processed_count += 1 if result else 0
-                except Exception as e:
-                    errors += 1
-                    logger.error(f"Failed processing payment {payment.id}: {str(e)}")
-                    continue
-            
-        except DatabaseError as e:
-            logger.critical(f"Database error during payment processing: {str(e)}")
-            return
-
-        logger.info(
-            f"Payment processing complete. "
-            f"Success: {processed_count}, "
-            f"Expired: {expired_count}, "
-            f"Errors: {errors}"
-        )
-
     @classmethod
     def process_single_payment(cls, payment: 'Payment', now: datetime.datetime) -> bool:
         """
