@@ -1,3 +1,6 @@
 python-telegram-bot
 peewee
 python-dotenv
+APScheduler
+base58
+requests
